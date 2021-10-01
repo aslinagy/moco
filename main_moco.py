@@ -107,12 +107,6 @@ parser.add_argument('--checkpoint', type=str, default='', help='where to log che
 def main():
     args = parser.parse_args()
 
-    if args.wandb:
-        wandb.init(project='micro_moco', entity='asnagy')
-        wandb_conf = wandb.config
-        for k, v in vars(args).items():
-            setattr(wandb_conf, k, v)
-
     if args.checkpoint != '':
         from pathlib import Path
 
@@ -273,6 +267,12 @@ def main_worker(gpu, ngpus_per_node, args):
     train_loader = torch.utils.data.DataLoader(
         train_dataset, batch_size=args.batch_size, shuffle=(train_sampler is None),
         num_workers=args.workers, pin_memory=True, sampler=train_sampler, drop_last=True)
+
+    if args.wandb:
+        wandb.init(project='micro_moco', entity='asnagy')
+        wandb_conf = wandb.config
+        for k, v in vars(args).items():
+            setattr(wandb_conf, k, v)
 
     for epoch in range(args.start_epoch, args.epochs):
         if args.distributed:
