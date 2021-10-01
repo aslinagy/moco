@@ -8,6 +8,7 @@ import random
 import shutil
 import time
 import warnings
+import wandb
 
 import torch
 import torch.nn as nn
@@ -98,8 +99,24 @@ parser.add_argument('--cos', action='store_true',
                     help='use cosine lr schedule')
 
 
+# Additional Options
+parser.add_argument('--wandb', action='store_true', help='Log models and stats to wandb')
+parser.add_argument('--checkpoint', type=str, default='', help='where to log checkpoints')
+
+
 def main():
     args = parser.parse_args()
+
+    if args.wandb:
+        wandb.init(project='micro_moco', entity='asnagy')
+        wandb_conf = wandb.config
+        for k, v in vars(args).items():
+            setattr(wandb_conf, k, v)
+
+    if args.checkpoint != '':
+        from pathlib import Path
+
+        Path(args.checkpoint).mkdir(parents=True, exist_ok=True)
 
     if args.seed is not None:
         random.seed(args.seed)
@@ -272,7 +289,7 @@ def main_worker(gpu, ngpus_per_node, args):
                 'arch': args.arch,
                 'state_dict': model.state_dict(),
                 'optimizer' : optimizer.state_dict(),
-            }, is_best=False, filename='checkpoint_{:04d}.pth.tar'.format(epoch))
+            }, is_best=False, filename=os.path.join(args.checkpoint, 'checkpoint_{:04d}.pth.tar'.format(epoch)))
 
 
 def train(train_loader, model, criterion, optimizer, epoch, args):
@@ -284,6 +301,7 @@ def train(train_loader, model, criterion, optimizer, epoch, args):
     progress = ProgressMeter(
         len(train_loader),
         [batch_time, data_time, losses, top1, top5],
+        epoch=epoch,
         prefix="Epoch: [{}]".format(epoch))
 
     # switch to train mode
@@ -320,6 +338,8 @@ def train(train_loader, model, criterion, optimizer, epoch, args):
 
         if i % args.print_freq == 0:
             progress.display(i)
+        if args.wandb:
+            progress.log_to_wandb(i)
 
 
 def save_checkpoint(state, is_best, filename='checkpoint.pth.tar'):
@@ -351,17 +371,28 @@ class AverageMeter(object):
         fmtstr = '{name} {val' + self.fmt + '} ({avg' + self.fmt + '})'
         return fmtstr.format(**self.__dict__)
 
+    def to_dict(self):
+        return {f'{self.name}_val': self.val, f'{self.name}_avg': self.avg}
 
 class ProgressMeter(object):
-    def __init__(self, num_batches, meters, prefix=""):
+    def __init__(self, num_batches, meters, epoch, prefix=""):
         self.batch_fmtstr = self._get_batch_fmtstr(num_batches)
+        self.num_batches = num_batches
         self.meters = meters
+        self.epoch = epoch
         self.prefix = prefix
 
     def display(self, batch):
         entries = [self.prefix + self.batch_fmtstr.format(batch)]
         entries += [str(meter) for meter in self.meters]
         print('\t'.join(entries))
+
+    def log_to_wandb(self, batch):
+        entry = {'epoch': self.epoch, 'iter': self.epoch*self.num_batches+batch}
+        for meter in self.meters:
+            entry.update(meter.to_dict())
+
+        wandb.log(entry)
 
     def _get_batch_fmtstr(self, num_batches):
         num_digits = len(str(num_batches // 1))
