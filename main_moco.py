@@ -102,6 +102,7 @@ parser.add_argument('--cos', action='store_true',
 # Additional Options
 parser.add_argument('--wandb', action='store_true', help='Log models and stats to wandb')
 parser.add_argument('--checkpoint', type=str, default='', help='where to log checkpoints')
+parser.add_argument('--run_name', type=str, default='', help='run name')
 
 
 def main():
@@ -109,8 +110,10 @@ def main():
 
     if args.checkpoint != '':
         from pathlib import Path
-
-        Path(args.checkpoint).mkdir(parents=True, exist_ok=True)
+        if args.run_name != '':
+            Path(os.path.join(args.checkpoint, args.run_name)).mkdir(parents=True, exist_ok=True)
+        else:
+            Path(args.checkpoint).mkdir(parents=True, exist_ok=True)
 
     if args.seed is not None:
         random.seed(args.seed)
@@ -269,7 +272,7 @@ def main_worker(gpu, ngpus_per_node, args):
         num_workers=args.workers, pin_memory=True, sampler=train_sampler, drop_last=True)
 
     if args.wandb:
-        wandb.init(project='micro_moco', entity='asnagy')
+        wandb.init(project='micro_moco', entity='asnagy', group=args.run_name)
         wandb_conf = wandb.config
         for k, v in vars(args).items():
             setattr(wandb_conf, k, v)
@@ -289,7 +292,8 @@ def main_worker(gpu, ngpus_per_node, args):
                 'arch': args.arch,
                 'state_dict': model.state_dict(),
                 'optimizer' : optimizer.state_dict(),
-            }, is_best=False, filename=os.path.join(args.checkpoint, 'checkpoint_{:04d}.pth.tar'.format(epoch)))
+            }, is_best=False, filename=os.path.join(args.checkpoint, args.run_name,
+                                                    'checkpoint_{:04d}.pth.tar'.format(epoch)))
 
 
 def train(train_loader, model, criterion, optimizer, epoch, args):
